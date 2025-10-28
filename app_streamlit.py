@@ -52,74 +52,47 @@ def is_password_in_local_leak(password):
     except FileNotFoundError:
         st.info(f"ℹ️ Local leak file '{LEAK_FILE}' not found. Create it to enable leak checks.")
     return False
-if __name__ == "__main__":
-    MAX_ATTEMPTS = 2   # allow only two weak attempts
-    attempt = 0
-
-    while attempt < MAX_ATTEMPTS + 1:
-        user_password = input("Enter your password: ")
-        strong, feedback = check_password_strength(user_password)
-
-        if strong:
-            print("✅ Your password is strong and unbreakable 🔐!")
-            break
-        else:
-            attempt += 1
-
-            # Local leak check
-            leaked_local = is_password_in_local_leak(user_password)
-            if leaked_local:
-                print("❗ This password was FOUND in the local leaked-password list. Unsafe!")
-            else:
-                print("✅ No leak found in local file.")
-
-            print("⚠️ Weak password detected — Feeling nervous 😰!")
-            print("Suggestions:")
-            for f in feedback:
-                print(" -", f)
-
-            new_password = strengthen_password(user_password)
-            print("\n🔒 Suggested stronger password:", new_password)
-            print()
-
-            if attempt >= MAX_ATTEMPTS:
-                print("❌ Too many weak attempts. Please try again after 1 hour.")
-                # Show the real unlock time (current time + 1 hour)
-                unlock_time = time.time() + COOLDOWN_SECONDS
-                readable = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(unlock_time))
-                print(f"⏳ You may try again after: {readable}")
-                # For demo purposes we sleep a short time so program doesn't hang for an hour
-                demo_sleep = 5
-                print(f"(Simulating cooldown by sleeping {demo_sleep} seconds for demo; remove this in production.)")
-                time.sleep(demo_sleep)
-                break
-            else:
-                print(f"Attempt {attempt}/{MAX_ATTEMPTS} - You can try again.\n")
-
 
 # ---- Streamlit UI ----
+# ---- Streamlit UI ----
 st.title("🔐 Password Strength & Leak Checker")
-st.write("Check if your password is strong and safe — and whether it has appeared in a leak database.")
+st.write("Check if your password is strong and safe — and whether it has appeared in a local leak database.")
 
-user_password = st.text_input("Enter your password:", type="password")
+if "attempts" not in st.session_state:
+    st.session_state.attempts = 0
+if "cooldown_end" not in st.session_state:
+    st.session_state.cooldown_end = 0
 
-if st.button("Check Password"):
-    if not user_password:
-        st.warning("Please enter a password first.")
-    else:
-        strong, feedback = check_password_strength(user_password)
-        leaked_local = is_password_in_local_leak(user_password)
+current_time = time.time()
+if current_time < st.session_state.cooldown_end:
+    wait = int(st.session_state.cooldown_end - current_time)
+    st.error(f"⏳ Too many weak attempts. Please try again in {wait} seconds.")
+else:
+    user_password = st.text_input("Enter your password:", type="password")
 
-        if leaked_local:
-            st.error("❗ This password was found in your local leaked-password list. Unsafe!")
+    if st.button("Check Password"):
+        if not user_password:
+            st.warning("Please enter a password first.")
         else:
-            st.success("✅ No leak found in local file.")
+            strong, feedback = check_password_strength(user_password)
+            leaked_local = is_password_in_local_leak(user_password)
 
-        if strong:
-            st.success("✅ Your password is strong and unbreakable 🔐!")
-        else:
-            st.warning("⚠️ Weak password detected — Feeling nervous 😰!")
-            for f in feedback:
-                st.write("•", f)
-            new_password = strengthen_password(user_password)
-            st.info(f"🔒 Suggested stronger password: `{new_password}`")
+            if leaked_local:
+                st.error("❗ This password was found in your local leaked-password list. Unsafe!")
+            else:
+                st.success("✅ No leak found in local file.")
+
+            if strong:
+                st.success("✅ Your password is strong and unbreakable 🔐!")
+                st.session_state.attempts = 0
+            else:
+                st.session_state.attempts += 1
+                st.warning("⚠️ Weak password detected — Feeling nervous 😰!")
+                for f in feedback:
+                    st.write("•", f)
+                new_password = strengthen_password(user_password)
+                st.info(f"🔒 Suggested stronger password: `{new_password}`")
+
+                if st.session_state.attempts >= 2:
+                    st.session_state.cooldown_end = time.time() + COOLDOWN_SECONDS
+                    st.error(f"❌ Too many weak attempts. Please try again after {COOLDOWN_SECONDS} seconds.")
